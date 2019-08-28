@@ -308,6 +308,7 @@ External library support:
   --enable-openssl         enable openssl, needed for https support
                            if gnutls, libtls or mbedtls is not used [no]
   --enable-pocketsphinx    enable PocketSphinx, needed for asr filter [no]
+  --enable-vulkan          enable Vulkan code [no]
   --disable-sndio          disable sndio support [autodetect]
   --disable-schannel       disable SChannel SSP, needed for TLS support on
                            Windows if openssl and gnutls are not used [autodetect]
@@ -1547,11 +1548,11 @@ require_cc(){
 }
 
 require_cpp(){
-    name="$1"
-    headers="$2"
-    classes="$3"
-    shift 3
-    check_lib_cpp "$headers" "$classes" "$@" || die "ERROR: $name not found"
+    log require_cpp "$@"
+    name_version="$1"
+    name="${1%% *}"
+    shift
+    check_lib_cpp "$name" "$@" || die "ERROR: $name_version not found"
 }
 
 require_headers(){
@@ -1851,6 +1852,7 @@ HWACCEL_LIBRARY_LIST="
     mmal
     omx
     opencl
+    vulkan
 "
 
 DOCUMENT_LIST="
@@ -3611,7 +3613,7 @@ avformat_deps="avcodec avutil"
 avformat_suggest="libm network zlib"
 avresample_deps="avutil"
 avresample_suggest="libm"
-avutil_suggest="clock_gettime ffnvcodec libm libdrm libmfx opencl user32 vaapi videotoolbox corefoundation corevideo coremedia bcrypt"
+avutil_suggest="clock_gettime ffnvcodec libm libdrm libmfx opencl user32 vaapi vulkan videotoolbox corefoundation corevideo coremedia bcrypt"
 postproc_deps="avutil gpl"
 postproc_suggest="libm"
 swresample_deps="avutil"
@@ -6587,6 +6589,9 @@ enabled vdpau &&
     check_lib vdpau_x11 "vdpau/vdpau.h vdpau/vdpau_x11.h" vdp_device_create_x11 -lvdpau -lX11
 
 enabled crystalhd && check_lib crystalhd "stdint.h libcrystalhd/libcrystalhd_if.h" DtsCrystalHDVersion -lcrystalhd
+
+enabled vulkan &&
+    require_pkg_config vulkan "vulkan >= 1.1.97" "vulkan/vulkan.h" vkCreateInstance
 
 if enabled x86; then
     case $target_os in

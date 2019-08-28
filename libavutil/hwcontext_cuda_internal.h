@@ -30,6 +30,7 @@
 
 struct AVCUDADeviceContextInternal {
     CudaFunctions *cuda_dl;
+    CUdevice device;
     int is_allocated;
 };
 
