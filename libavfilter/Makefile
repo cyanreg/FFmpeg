@@ -501,6 +501,8 @@ SKIPHEADERS-$(CONFIG_QSVVPP)                 += qsvvpp.h
 SKIPHEADERS-$(CONFIG_OPENCL)                 += opencl.h
 SKIPHEADERS-$(CONFIG_VAAPI)                  += vaapi_vpp.h
 
+OBJS-$(CONFIG_LIBGLSLANG)                    += glslang.o
+
 TOOLS     = graph2dot
 TESTPROGS = drawutils filtfmts formats integral
 
