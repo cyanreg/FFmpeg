@@ -759,6 +759,13 @@ If in doubt use @option{-framerate} instead of the input option @option{-r}.
 As an output option, duplicate or drop input frames to achieve constant output
 frame rate @var{fps}.
 
+@item -fpsmax[:@var{stream_specifier}] @var{fps} (@emph{output,per-stream})
+Set maximum frame rate (Hz value, fraction or abbreviation).
+
+Clamps output frame rate when output framerate is auto-set and is higher than this value.
+Useful in batch processing or when input framerate is wrongly detected as very high.
+It cannot be set together with @code{-r}. It is ignored during streamcopy.
+
 @item -s[:@var{stream_specifier}] @var{size} (@emph{input/output,per-stream})
 Set frame size.
 
@@ -1510,6 +1517,11 @@ Set the minimum difference between timestamps and audio data (in seconds) to tri
 adding/dropping samples to make it match the timestamps. This option effectively is
 a threshold to select between hard (add/drop) and soft (squeeze/stretch) compensation.
 @code{-async} must be set to a positive value.
+
+@item -apad @var{parameters} (@emph{output,per-stream})
+Pad the output audio stream(s). This is the same as applying @code{-af apad}.
+Argument is a string of filter parameters composed the same as with the @code{apad} filter.
+@code{-shortest} must be set for this output for the option to take effect.
 
 @item -copyts
 Do not process input timestamps, but keep their values without trying

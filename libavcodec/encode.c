@@ -56,6 +56,59 @@ int ff_alloc_packet2(AVCodecContext *avctx, AVPacket *avpkt, int64_t size, int64
     return 0;
 }
 
+int avcodec_default_get_encode_buffer(AVCodecContext *avctx, AVPacket *avpkt, int flags)
+{
+    int ret;
+
+    if (avpkt->size < 0 || avpkt->size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE)
+        return AVERROR(EINVAL);
+
+    if (avpkt->data || avpkt->buf) {
+        av_log(avctx, AV_LOG_ERROR, "avpkt->{data,buf} != NULL in avcodec_default_get_encode_buffer()\n");
+        return AVERROR(EINVAL);
+    }
+
+    ret = av_buffer_realloc(&avpkt->buf, avpkt->size + AV_INPUT_BUFFER_PADDING_SIZE);
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "Failed to allocate packet of size %d\n", avpkt->size);
+        return ret;
+    }
+    avpkt->data = avpkt->buf->data;
+    memset(avpkt->data + avpkt->size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
+
+    return 0;
+}
+
+int ff_get_encode_buffer(AVCodecContext *avctx, AVPacket *avpkt, int64_t size, int flags)
+{
+    int ret;
+
+    if (size < 0 || size > INT_MAX - AV_INPUT_BUFFER_PADDING_SIZE)
+        return AVERROR(EINVAL);
+
+    av_assert0(!avpkt->data && !avpkt->buf);
+
+    avpkt->size = size;
+    ret = avctx->get_encode_buffer(avctx, avpkt, flags);
+    if (ret < 0)
+        goto fail;
+
+    if (!avpkt->data || !avpkt->buf) {
+        av_log(avctx, AV_LOG_ERROR, "No buffer returned by get_encode_buffer()\n");
+        ret = AVERROR(EINVAL);
+        goto fail;
+    }
+
+    ret = 0;
+fail:
+    if (ret < 0) {
+        av_log(avctx, AV_LOG_ERROR, "get_encode_buffer() failed\n");
+        av_packet_unref(avpkt);
+    }
+
+    return ret;
+}
+
 /**
  * Pad last frame with silence.
  */
@@ -152,6 +205,10 @@ static int encode_simple_internal(AVCodecContext *avctx, AVPacket *avpkt)
 
     if (CONFIG_FRAME_THREAD_ENCODER &&
         avci->frame_thread_encoder && (avctx->active_thread_type & FF_THREAD_FRAME))
+        /* This might modify frame, but it doesn't matter, because
+         * the frame properties used below are not used for video
+         * (due to the delay inherent in frame threaded encoding, it makes
+         *  no sense to use the properties of the current frame anyway). */
         ret = ff_thread_video_encode_frame(avctx, avpkt, frame, &got_packet);
     else {
         ret = avctx->codec->encode2(avctx, avpkt, frame, &got_packet);
@@ -371,6 +428,12 @@ static int compat_encode(AVCodecContext *avctx, AVPacket *avpkt,
             av_log(avctx, AV_LOG_WARNING, "AVFrame.format is not set\n");
         if (frame->width == 0 || frame->height == 0)
             av_log(avctx, AV_LOG_WARNING, "AVFrame.width or height is not set\n");
+    }
+
+    if (avctx->codec->capabilities & AV_CODEC_CAP_DR1) {
+        av_log(avctx, AV_LOG_WARNING, "The deprecated avcodec_encode_* API does not support "
+                                      "AV_CODEC_CAP_DR1 encoders\n");
+        return AVERROR(ENOSYS);
     }
 
     ret = avcodec_send_frame(avctx, frame);

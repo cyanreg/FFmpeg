@@ -112,12 +112,12 @@ static DNNReturnType get_output_native(void *model, const char *input_name, int 
 // layers_num,layer_type,layer_parameterss,layer_type,layer_parameters...
 // For CONV layer: activation_function, input_num, output_num, kernel_size, kernel, biases
 // For DEPTH_TO_SPACE layer: block_size
-DNNModel *ff_dnn_load_model_native(const char *model_filename, const char *options, AVFilterContext *filter_ctx)
+DNNModel *ff_dnn_load_model_native(const char *model_filename, DNNFunctionType func_type, const char *options, AVFilterContext *filter_ctx)
 {
+#define DNN_NATIVE_MAGIC "FFMPEGDNNNATIVE"
     DNNModel *model = NULL;
-    char header_expected[] = "FFMPEGDNNNATIVE";
-    char *buf;
-    size_t size;
+    // sizeof - 1 to skip the terminating '\0' which is not written in the file
+    char buf[sizeof(DNN_NATIVE_MAGIC) - 1];
     int version, header_size, major_version_expected = 1;
     NativeModel *native_model = NULL;
     AVIOContext *model_file_context;
@@ -138,20 +138,10 @@ DNNModel *ff_dnn_load_model_native(const char *model_filename, const char *optio
     /**
      * check file header with string and version
      */
-    size = sizeof(header_expected);
-    buf = av_malloc(size);
-    if (!buf) {
+    if (avio_read(model_file_context, buf, sizeof(buf)) != sizeof(buf) ||
+        memcmp(buf, DNN_NATIVE_MAGIC, sizeof(buf)))
         goto fail;
-    }
-
-    // size - 1 to skip the ending '\0' which is not saved in file
-    avio_get_str(model_file_context, size - 1, buf, size);
-    dnn_size = size - 1;
-    if (strncmp(buf, header_expected, size) != 0) {
-        av_freep(&buf);
-        goto fail;
-    }
-    av_freep(&buf);
+    dnn_size = sizeof(buf);
 
     version = (int32_t)avio_rl32(model_file_context);
     dnn_size += 4;
@@ -168,12 +158,12 @@ DNNModel *ff_dnn_load_model_native(const char *model_filename, const char *optio
     if (!native_model){
         goto fail;
     }
+    model->model = native_model;
 
     native_model->ctx.class = &dnn_native_class;
     model->options = options;
     if (av_opt_set_from_string(&native_model->ctx, model->options, NULL, "=", "&") < 0)
         goto fail;
-    model->model = (void *)native_model;
     native_model->model = model;
 
 #if !HAVE_PTHREAD_CANCEL
@@ -242,6 +232,8 @@ DNNModel *ff_dnn_load_model_native(const char *model_filename, const char *optio
             oprd->dims[dim] = (int32_t)avio_rl32(model_file_context);
             dnn_size += 4;
         }
+        if (oprd->type == DOT_INPUT && oprd->dims[0] != 1)
+            goto fail;
 
         oprd->isNHWC = 1;
     }
@@ -256,6 +248,7 @@ DNNModel *ff_dnn_load_model_native(const char *model_filename, const char *optio
     model->get_input = &get_input_native;
     model->get_output = &get_output_native;
     model->filter_ctx = filter_ctx;
+    model->func_type = func_type;
 
     return model;
 
@@ -320,7 +313,7 @@ static DNNReturnType execute_model_native(const DNNModel *model, const char *inp
         if (native_model->model->pre_proc != NULL) {
             native_model->model->pre_proc(in_frame, &input, native_model->model->filter_ctx);
         } else {
-            ff_proc_from_frame_to_dnn(in_frame, &input, ctx);
+            ff_proc_from_frame_to_dnn(in_frame, &input, native_model->model->func_type, ctx);
         }
     }
 
@@ -338,7 +331,7 @@ static DNNReturnType execute_model_native(const DNNModel *model, const char *inp
                                             native_model->layers[layer].output_operand_index,
                                             native_model->layers[layer].params,
                                             &native_model->ctx) == DNN_ERROR) {
-            av_log(ctx, AV_LOG_ERROR, "Failed to execuet model\n");
+            av_log(ctx, AV_LOG_ERROR, "Failed to execute model\n");
             return DNN_ERROR;
         }
     }

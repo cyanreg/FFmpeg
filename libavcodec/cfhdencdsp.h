@@ -1,6 +1,4 @@
 /*
- * copyright (C) 2006 Corey Hickey
- *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -18,19 +16,26 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#ifndef AVCODEC_LIBXVID_H
-#define AVCODEC_LIBXVID_H
+#ifndef AVCODEC_CFHDENCDSP_H
+#define AVCODEC_CFHDENCDSP_H
 
-/**
- * @file
- * common functions for use with the Xvid wrappers
- */
+#include <stddef.h>
+#include <stdint.h>
 
-struct MpegEncContext;
+typedef struct CFHDEncDSPContext {
+    void (*horiz_filter)(int16_t *input, int16_t *low, int16_t *high,
+                         ptrdiff_t in_stride, ptrdiff_t low_stride,
+                         ptrdiff_t high_stride,
+                         int width, int height);
 
-/* rate control */
-int ff_xvid_rate_control_init(struct MpegEncContext *s);
-void ff_xvid_rate_control_uninit(struct MpegEncContext *s);
-float ff_xvid_rate_estimate_qscale(struct MpegEncContext *s, int dry_run);
+    void (*vert_filter)(int16_t *input, int16_t *low, int16_t *high,
+                        ptrdiff_t in_stride, ptrdiff_t low_stride,
+                        ptrdiff_t high_stride,
+                        int width, int height);
+} CFHDEncDSPContext;
 
-#endif /* AVCODEC_LIBXVID_H */
+void ff_cfhdencdsp_init(CFHDEncDSPContext *c);
+
+void ff_cfhdencdsp_init_x86(CFHDEncDSPContext *c);
+
+#endif /* AVCODEC_CFHDENCDSP_H */

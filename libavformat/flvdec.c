@@ -453,9 +453,13 @@ static int parse_keyframes_index(AVFormatContext *s, AVIOContext *ioc, int64_t m
         }
 
         for (i = 0; i < arraylen && avio_tell(ioc) < max_pos - 1; i++) {
+            double d;
             if (avio_r8(ioc) != AMF_DATA_TYPE_NUMBER)
                 goto invalid;
-            current_array[0][i] = av_int2double(avio_rb64(ioc));
+            d = av_int2double(avio_rb64(ioc));
+            if (isnan(d) || d < INT64_MIN || d > INT64_MAX)
+                goto invalid;
+            current_array[0][i] = d;
         }
         if (times && filepositions) {
             // All done, exiting at a position allowing amf_parse_object
@@ -854,6 +858,9 @@ static int amf_skip_tag(AVIOContext *pb, AMFDataType type, int depth)
     if (depth > MAX_DEPTH)
         return AVERROR_PATCHWELCOME;
 
+    if (avio_feof(pb))
+        return AVERROR_EOF;
+
     switch (type) {
     case AMF_DATA_TYPE_NUMBER:
         avio_skip(pb, 8);
@@ -1171,7 +1178,7 @@ retry_duration:
             avio_seek(s->pb, fsize - 3 - size, SEEK_SET);
             if (size == avio_rb24(s->pb) + 11) {
                 uint32_t ts = avio_rb24(s->pb);
-                ts         |= avio_r8(s->pb) << 24;
+                ts         |= (unsigned)avio_r8(s->pb) << 24;
                 if (ts)
                     s->duration = ts * (int64_t)AV_TIME_BASE / 1000;
                 else if (fsize >= 8 && fsize - 8 >= size) {

@@ -184,6 +184,7 @@ static int cri_decode_frame(AVCodecContext *avctx, void *data,
         char codec_name[1024];
         uint32_t key, length;
         float framerate;
+        int width, height;
 
         key    = bytestream2_get_le32(gb);
         length = bytestream2_get_le32(gb);
@@ -199,11 +200,14 @@ static int cri_decode_frame(AVCodecContext *avctx, void *data,
         case 100:
             if (length < 16)
                 return AVERROR_INVALIDDATA;
-            avctx->width   = bytestream2_get_le32(gb);
-            avctx->height  = bytestream2_get_le32(gb);
+            width   = bytestream2_get_le32(gb);
+            height  = bytestream2_get_le32(gb);
             s->color_model = bytestream2_get_le32(gb);
             if (bytestream2_get_le32(gb) != 1)
                 return AVERROR_INVALIDDATA;
+            ret = ff_set_dimensions(avctx, width, height);
+            if (ret < 0)
+                return ret;
             length -= 16;
             goto skip;
         case 101:
@@ -330,6 +334,9 @@ skip:
 
         for (int y = 0; y < avctx->height; y++) {
             uint16_t *dst = (uint16_t *)(p->data[0] + y * p->linesize[0]);
+
+            if (get_bits_left(&gbit) < avctx->width * bps)
+                break;
 
             for (int x = 0; x < avctx->width; x++)
                 dst[x] = get_bits(&gbit, bps) << shift;

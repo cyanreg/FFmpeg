@@ -43,6 +43,7 @@ enum AVTXType {
      * The stride parameter is ignored.
      */
     AV_TX_FLOAT_FFT = 0,
+
     /**
      * Standard MDCT with sample data type of float and a scale type of
      * float. Length is the frame size, not the window size (which is 2x frame)
@@ -55,19 +56,23 @@ enum AVTXType {
      * contain redundant data. This is what most codecs work with.
      */
     AV_TX_FLOAT_MDCT = 1,
+
     /**
      * Same as AV_TX_FLOAT_FFT with a data type of AVComplexDouble.
      */
     AV_TX_DOUBLE_FFT = 2,
+
     /**
      * Same as AV_TX_FLOAT_MDCT with data and scale type of double.
      * Stride must be a non-zero multiple of sizeof(double).
      */
     AV_TX_DOUBLE_MDCT = 3,
+
     /**
      * Same as AV_TX_FLOAT_FFT with a data type of AVComplexInt32.
      */
     AV_TX_INT32_FFT = 4,
+
     /**
      * Same as AV_TX_FLOAT_MDCT with data type of int32_t and scale type of float.
      * Only scale values less than or equal to 1.0 are supported.
@@ -94,6 +99,18 @@ enum AVTXType {
 typedef void (*av_tx_fn)(AVTXContext *s, void *out, void *in, ptrdiff_t stride);
 
 /**
+ * Flags for av_tx_init()
+ */
+enum AVTXFlags {
+    /**
+     * Performs an in-place transformation on the input. The output argument
+     * of av_tn_fn() MUST match the input. May be unsupported or slower for some
+     * transform types.
+     */
+    AV_TX_INPLACE = 1ULL << 0,
+};
+
+/**
  * Initialize a transform context with the given configuration
  * (i)MDCTs with an odd length are currently not supported.
  *
@@ -103,7 +120,7 @@ typedef void (*av_tx_fn)(AVTXContext *s, void *out, void *in, ptrdiff_t stride);
  * @param inv whether to do an inverse or a forward transform
  * @param len the size of the transform in samples
  * @param scale pointer to the value to scale the output if supported by type
- * @param flags currently unused
+ * @param flags a bitmask of AVTXFlags or 0
  *
  * @return 0 on success, negative error code on failure
  */

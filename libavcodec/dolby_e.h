@@ -31,24 +31,6 @@
 #define MAX_CHANNELS    8
 
 /**
- * @struct DBEContext
- * Dolby E reading context used by decoder and parser.
- */
-typedef struct DBEContext {
-    void        *avctx;
-    GetBitContext   gb;
-
-    const uint8_t *input;
-    int         input_size;
-
-    int         word_bits;
-    int         word_bytes;
-    int         key_present;
-
-    uint8_t     buffer[1024 * 3 + AV_INPUT_BUFFER_PADDING_SIZE];
-} DBEContext;
-
-/**
  * @struct DolbyEHeaderInfo
  * Coded Dolby E header values up to end_gain element, plus derived values.
  */
@@ -76,29 +58,46 @@ typedef struct DolbyEHeaderInfo {
      * @{
      */
     int         multi_prog_warned;
+
+    int         sample_rate;
     /** @} */
 } DolbyEHeaderInfo;
 
-static const uint16_t sample_rate_tab[16] = {
-    0, 42965, 43008, 44800, 53706, 53760
-};
 /**
- * Initialize DBEContext.
- * Set word_bits/word_bytes, input, input_size, key_present.
+ * @struct DBEContext
+ * Dolby E reading context used by decoder and parser.
+ */
+typedef struct DBEContext {
+    void        *avctx;
+    GetBitContext   gb;
+
+    const uint8_t *input;
+    int         input_size;
+
+    int         word_bits;
+    int         word_bytes;
+    int         key_present;
+
+    DolbyEHeaderInfo metadata;
+
+    uint8_t     buffer[1024 * 3 + AV_INPUT_BUFFER_PADDING_SIZE];
+} DBEContext;
+
+/**
+ * Use the provided key to transform the input into data (put into s->buffer)
+ * suitable for further processing and initialize s->gb to read said data.
+ */
+int ff_dolby_e_convert_input(DBEContext *s, int nb_words, int key);
+
+/**
+ * Initialize DBEContext and parse Dolby E metadata.
+ * Set word_bits/word_bytes, input, input_size, key_present
+ * and parse the header up to the end_gain element.
  * @param[out] s DBEContext.
  * @param[in]  buf raw input buffer.
  * @param[in]  buf_size must be 3 bytes at least.
  * @return Returns 0 on success, AVERROR_INVALIDDATA on error
  */
-int ff_dolby_e_parse_init(DBEContext *s, const uint8_t *buf, int buf_size);
-
-/**
- * Parse Dolby E metadata.
- * Parse the header up to the end_gain element.
- * @param[in]  s DBEContext .
- * @param[out] hdr Pointer to struct where header info is written.
- * @return Returns 0 on success, AVERROR_INVALIDDATA on error
- */
-int ff_dolby_e_parse_header(DBEContext *s, DolbyEHeaderInfo *hdr);
+int ff_dolby_e_parse_header(DBEContext *s, const uint8_t *buf, int buf_size);
 
 #endif

@@ -580,7 +580,7 @@ static DNNReturnType load_native_model(TFModel *tf_model, const char *model_file
     DNNModel *model = NULL;
     NativeModel *native_model;
 
-    model = ff_dnn_load_model_native(model_filename, NULL, NULL);
+    model = ff_dnn_load_model_native(model_filename, DFT_PROCESS_FRAME, NULL, NULL);
     if (!model){
         av_log(ctx, AV_LOG_ERROR, "Failed to load native model\n");
         return DNN_ERROR;
@@ -664,7 +664,7 @@ static DNNReturnType load_native_model(TFModel *tf_model, const char *model_file
     return DNN_SUCCESS;
 }
 
-DNNModel *ff_dnn_load_model_tf(const char *model_filename, const char *options, AVFilterContext *filter_ctx)
+DNNModel *ff_dnn_load_model_tf(const char *model_filename, DNNFunctionType func_type, const char *options, AVFilterContext *filter_ctx)
 {
     DNNModel *model = NULL;
     TFModel *tf_model = NULL;
@@ -705,6 +705,7 @@ DNNModel *ff_dnn_load_model_tf(const char *model_filename, const char *options, 
     model->get_output = &get_output_tf;
     model->options = options;
     model->filter_ctx = filter_ctx;
+    model->func_type = func_type;
 
     return model;
 }
@@ -743,7 +744,7 @@ static DNNReturnType execute_model_tf(const DNNModel *model, const char *input_n
         if (tf_model->model->pre_proc != NULL) {
             tf_model->model->pre_proc(in_frame, &input, tf_model->model->filter_ctx);
         } else {
-            ff_proc_from_frame_to_dnn(in_frame, &input, ctx);
+            ff_proc_from_frame_to_dnn(in_frame, &input, tf_model->model->func_type, ctx);
         }
     }
 

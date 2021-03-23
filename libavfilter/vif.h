@@ -1,4 +1,7 @@
 /*
+ * Copyright (c) 2017 Ronald S. Bultje <rsbultje@gmail.com>
+ * Copyright (c) 2017 Ashish Pratap Singh <ashk43712@gmail.com>
+ *
  * This file is part of FFmpeg.
  *
  * FFmpeg is free software; you can redistribute it and/or
@@ -16,6 +19,14 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#define USE_FIXED 1
-#include "sinewin.h"
-#include "sinewin_tablegen.h"
+#ifndef AVFILTER_VIF_H
+#define AVFILTER_VIF_H
+
+#include "avfilter.h"
+
+int ff_compute_vif2(AVFilterContext *ctx,
+                    const float *ref, const float *main, int w, int h,
+                    int ref_stride, int main_stride, float *score,
+                    float *data_buf[13], float **temp, int nb_threads);
+
+#endif /* AVFILTER_VIF_H */

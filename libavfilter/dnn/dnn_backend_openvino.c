@@ -99,6 +99,8 @@ static DNNDataType precision_to_datatype(precision_e precision)
     {
     case FP32:
         return DNN_FLOAT;
+    case U8:
+        return DNN_UINT8;
     default:
         av_assert0(!"not supported yet.");
         return DNN_FLOAT;
@@ -111,6 +113,8 @@ static int get_datatype_size(DNNDataType dt)
     {
     case DNN_FLOAT:
         return sizeof(float);
+    case DNN_UINT8:
+        return sizeof(uint8_t);
     default:
         av_assert0(!"not supported yet.");
         return 1;
@@ -152,6 +156,9 @@ static DNNReturnType fill_model_input_ov(OVModel *ov_model, RequestItem *request
     input.channels = dims.dims[1];
     input.data = blob_buffer.buffer;
     input.dt = precision_to_datatype(precision);
+    // all models in openvino open model zoo use BGR as input,
+    // change to be an option when necessary.
+    input.order = DCO_BGR;
 
     av_assert0(request->task_count <= dims.dims[0]);
     for (int i = 0; i < request->task_count; ++i) {
@@ -160,7 +167,7 @@ static DNNReturnType fill_model_input_ov(OVModel *ov_model, RequestItem *request
             if (ov_model->model->pre_proc != NULL) {
                 ov_model->model->pre_proc(task->in_frame, &input, ov_model->model->filter_ctx);
             } else {
-                ff_proc_from_frame_to_dnn(task->in_frame, &input, ctx);
+                ff_proc_from_frame_to_dnn(task->in_frame, &input, ov_model->model->func_type, ctx);
             }
         }
         input.data = (uint8_t *)input.data
@@ -178,6 +185,7 @@ static void infer_completion_callback(void *args)
     IEStatusCode status;
     RequestItem *request = args;
     TaskItem *task = request->tasks[0];
+    SafeQueue *requestq = task->ov_model->request_queue;
     ie_blob_t *output_blob = NULL;
     ie_blob_buffer_t blob_buffer;
     DNNData output;
@@ -243,14 +251,14 @@ static void infer_completion_callback(void *args)
     request->task_count = 0;
 
     if (task->async) {
-        if (ff_safe_queue_push_back(task->ov_model->request_queue, request) < 0) {
+        if (ff_safe_queue_push_back(requestq, request) < 0) {
             av_log(ctx, AV_LOG_ERROR, "Failed to push back request_queue.\n");
             return;
         }
     }
 }
 
-static DNNReturnType init_model_ov(OVModel *ov_model)
+static DNNReturnType init_model_ov(OVModel *ov_model, const char *input_name, const char *output_name)
 {
     OVContext *ctx = &ov_model->ctx;
     IEStatusCode status;
@@ -274,6 +282,33 @@ static DNNReturnType init_model_ov(OVModel *ov_model)
         ie_network_input_shapes_free(&input_shapes);
         if (status != OK)
             goto err;
+    }
+
+    // The order of dims in the openvino is fixed and it is always NCHW for 4-D data.
+    // while we pass NHWC data from FFmpeg to openvino
+    status = ie_network_set_input_layout(ov_model->network, input_name, NHWC);
+    if (status != OK) {
+        av_log(ctx, AV_LOG_ERROR, "Failed to set layout as NHWC for input %s\n", input_name);
+        goto err;
+    }
+    status = ie_network_set_output_layout(ov_model->network, output_name, NHWC);
+    if (status != OK) {
+        av_log(ctx, AV_LOG_ERROR, "Failed to set layout as NHWC for output %s\n", output_name);
+        goto err;
+    }
+
+    // all models in openvino open model zoo use BGR with range [0.0f, 255.0f] as input,
+    // we don't have a AVPixelFormat to descibe it, so we'll use AV_PIX_FMT_BGR24 and
+    // ask openvino to do the conversion internally.
+    // the current supported SR model (frame processing) is generated from tensorflow model,
+    // and its input is Y channel as float with range [0.0f, 1.0f], so do not set for this case.
+    // TODO: we need to get a final clear&general solution with all backends/formats considered.
+    if (ov_model->model->func_type != DFT_PROCESS_FRAME) {
+        status = ie_network_set_input_precision(ov_model->network, input_name, U8);
+        if (status != OK) {
+            av_log(ctx, AV_LOG_ERROR, "Failed to set input precision as U8 for %s\n", input_name);
+            return DNN_ERROR;
+        }
     }
 
     status = ie_core_load_network(ov_model->core, ov_model->network, ctx->options.device_type, &config, &ov_model->exe_network);
@@ -482,7 +517,7 @@ static DNNReturnType get_output_ov(void *model, const char *input_name, int inpu
     }
 
     if (!ov_model->exe_network) {
-        if (init_model_ov(ov_model) != DNN_SUCCESS) {
+        if (init_model_ov(ov_model, input_name, output_name) != DNN_SUCCESS) {
             av_log(ctx, AV_LOG_ERROR, "Failed init OpenVINO exectuable network or inference request\n");
             return DNN_ERROR;
         }
@@ -510,7 +545,7 @@ static DNNReturnType get_output_ov(void *model, const char *input_name, int inpu
     return ret;
 }
 
-DNNModel *ff_dnn_load_model_ov(const char *model_filename, const char *options, AVFilterContext *filter_ctx)
+DNNModel *ff_dnn_load_model_ov(const char *model_filename, DNNFunctionType func_type, const char *options, AVFilterContext *filter_ctx)
 {
     DNNModel *model = NULL;
     OVModel *ov_model = NULL;
@@ -558,6 +593,7 @@ DNNModel *ff_dnn_load_model_ov(const char *model_filename, const char *options, 
     model->get_output = &get_output_ov;
     model->options = options;
     model->filter_ctx = filter_ctx;
+    model->func_type = func_type;
 
     return model;
 
@@ -580,7 +616,7 @@ DNNReturnType ff_dnn_execute_model_ov(const DNNModel *model, const char *input_n
         return DNN_ERROR;
     }
 
-    if (!out_frame) {
+    if (!out_frame && model->func_type == DFT_PROCESS_FRAME) {
         av_log(ctx, AV_LOG_ERROR, "out frame is NULL when execute model.\n");
         return DNN_ERROR;
     }
@@ -598,7 +634,7 @@ DNNReturnType ff_dnn_execute_model_ov(const DNNModel *model, const char *input_n
     }
 
     if (!ov_model->exe_network) {
-        if (init_model_ov(ov_model) != DNN_SUCCESS) {
+        if (init_model_ov(ov_model, input_name, output_names[0]) != DNN_SUCCESS) {
             av_log(ctx, AV_LOG_ERROR, "Failed init OpenVINO exectuable network or inference request\n");
             return DNN_ERROR;
         }
@@ -633,7 +669,7 @@ DNNReturnType ff_dnn_execute_model_async_ov(const DNNModel *model, const char *i
         return DNN_ERROR;
     }
 
-    if (!out_frame) {
+    if (!out_frame && model->func_type == DFT_PROCESS_FRAME) {
         av_log(ctx, AV_LOG_ERROR, "out frame is NULL when async execute model.\n");
         return DNN_ERROR;
     }
@@ -645,7 +681,7 @@ DNNReturnType ff_dnn_execute_model_async_ov(const DNNModel *model, const char *i
     }
 
     if (!ov_model->exe_network) {
-        if (init_model_ov(ov_model) != DNN_SUCCESS) {
+        if (init_model_ov(ov_model, input_name, output_names[0]) != DNN_SUCCESS) {
             av_log(ctx, AV_LOG_ERROR, "Failed init OpenVINO exectuable network or inference request\n");
             return DNN_ERROR;
         }

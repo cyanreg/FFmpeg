@@ -1,6 +1,6 @@
 /*
- * various simple utilities for libavformat
- * Copyright (c) 2000, 2001, 2002 Fabrice Bellard
+ * TTML subtitle encoder shared functionality
+ * Copyright (c) 2020 24i
  *
  * This file is part of FFmpeg.
  *
@@ -19,21 +19,10 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/time_internal.h"
-#include "avformat.h"
-#include "internal.h"
+#ifndef AVCODEC_TTMLENC_H
+#define AVCODEC_TTMLENC_H
 
-#define ISLEAP(y) (((y) % 4 == 0) && (((y) % 100) != 0 || ((y) % 400) == 0))
-#define LEAPS_COUNT(y) ((y)/4 - (y)/100 + (y)/400)
+#define TTMLENC_EXTRADATA_SIGNATURE "lavc-ttmlenc"
+#define TTMLENC_EXTRADATA_SIGNATURE_SIZE (sizeof(TTMLENC_EXTRADATA_SIGNATURE) - 1)
 
-/* This is our own gmtime_r. It differs from its POSIX counterpart in a
-   couple of places, though. */
-struct tm *ff_brktimegm(time_t secs, struct tm *tm)
-{
-    tm = gmtime_r(&secs, tm);
-
-    tm->tm_year += 1900; /* unlike gmtime_r we store complete year here */
-    tm->tm_mon  += 1;    /* unlike gmtime_r tm_mon is from 1 to 12 */
-
-    return tm;
-}
+#endif /* AVCODEC_TTMLENC_H */

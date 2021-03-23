@@ -688,7 +688,7 @@ void assert_avoptions(AVDictionary *m)
     }
 }
 
-static void abort_codec_experimental(AVCodec *c, int encoder)
+static void abort_codec_experimental(const AVCodec *c, int encoder)
 {
     exit_program(1);
 }
@@ -2943,7 +2943,7 @@ static int init_input_stream(int ist_index, char *error, int error_len)
     InputStream *ist = input_streams[ist_index];
 
     if (ist->decoding_needed) {
-        AVCodec *codec = ist->dec;
+        const AVCodec *codec = ist->dec;
         if (!codec) {
             snprintf(error, error_len, "Decoder (codec %s) not found for input stream #%d:%d",
                     avcodec_get_name(ist->dec_ctx->codec_id), ist->file_index, ist->st->index);
@@ -2957,7 +2957,6 @@ static int init_input_stream(int ist_index, char *error, int error_len)
         ist->dec_ctx->thread_safe_callbacks = 1;
 #endif
 
-        av_opt_set_int(ist->dec_ctx, "refcounted_frames", 1, 0);
         if (ist->dec_ctx->codec_id == AV_CODEC_ID_DVB_SUBTITLE &&
            (ist->decoding_needed & DECODING_FOR_OST)) {
             av_dict_set(&ist->decoder_opts, "compute_edt", "1", AV_DICT_DONT_OVERWRITE);
@@ -3376,7 +3375,7 @@ static int init_output_stream_encode(OutputStream *ost, AVFrame *frame)
             ost->frame_rate = ist->framerate;
         if (ist && !ost->frame_rate.num)
             ost->frame_rate = ist->st->r_frame_rate;
-        if (ist && !ost->frame_rate.num) {
+        if (ist && !ost->frame_rate.num && !ost->max_frame_rate.num) {
             ost->frame_rate = (AVRational){25, 1};
             av_log(NULL, AV_LOG_WARNING,
                    "No information "
@@ -3385,6 +3384,11 @@ static int init_output_stream_encode(OutputStream *ost, AVFrame *frame)
                    "if you want a different framerate.\n",
                    ost->file_index, ost->index);
         }
+
+        if (ost->max_frame_rate.num &&
+            (av_q2d(ost->frame_rate) > av_q2d(ost->max_frame_rate) ||
+            !ost->frame_rate.den))
+            ost->frame_rate = ost->max_frame_rate;
 
         if (ost->enc->supported_framerates && !ost->force_fps) {
             int idx = av_find_nearest_q_idx(ost->frame_rate, ost->enc->supported_framerates);
@@ -3518,7 +3522,7 @@ static int init_output_stream(OutputStream *ost, AVFrame *frame,
     int ret = 0;
 
     if (ost->encoding_needed) {
-        AVCodec      *codec = ost->enc;
+        const AVCodec *codec = ost->enc;
         AVCodecContext *dec = NULL;
         InputStream *ist;
 
