@@ -1834,6 +1834,7 @@ enum PrepMode {
     PREP_MODE_EXTERNAL_IMPORT,
     PREP_MODE_DECODING_DST,
     PREP_MODE_DECODING_DPB,
+    PREP_MODE_ENCODING_DPB,
 };
 
 static int prepare_frame(AVHWFramesContext *hwfc, FFVkExecPool *ectx,
@@ -1893,6 +1894,10 @@ static int prepare_frame(AVHWFramesContext *hwfc, FFVkExecPool *ectx,
         break;
     case PREP_MODE_DECODING_DPB:
         new_layout = VK_IMAGE_LAYOUT_VIDEO_DECODE_DPB_KHR;
+        new_access = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+        break;
+    case PREP_MODE_ENCODING_DPB:
+        new_layout = VK_IMAGE_LAYOUT_VIDEO_ENCODE_DPB_KHR;
         new_access = VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
         break;
     }
@@ -2153,6 +2158,8 @@ static AVBufferRef *vulkan_pool_alloc(void *opaque, size_t size)
         err = prepare_frame(hwfc, &fp->compute_exec, f, PREP_MODE_DECODING_DPB);
     else if (hwctx->usage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR)
         err = prepare_frame(hwfc, &fp->compute_exec, f, PREP_MODE_DECODING_DST);
+    else if (hwctx->usage & VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR)
+        err = prepare_frame(hwfc, &fp->compute_exec, f, PREP_MODE_ENCODING_DPB);
     else
         err = prepare_frame(hwfc, &fp->compute_exec, f, PREP_MODE_WRITE);
     if (err)
