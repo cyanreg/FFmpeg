@@ -354,6 +354,7 @@ External library support:
   --disable-vdpau          disable Nvidia Video Decode and Presentation API for Unix code [autodetect]
   --disable-videotoolbox   disable VideoToolbox code [autodetect]
   --disable-vulkan         disable Vulkan code [autodetect]
+  --enable-vulkan-encode   enable Vulkan encoding code [no]
 
 Toolchain options:
   --arch=ARCH              select architecture [$arch]
@@ -1915,6 +1916,7 @@ HWACCEL_LIBRARY_LIST="
     mmal
     omx
     opencl
+    vulkan_encode
 "
 
 DOCUMENT_LIST="
