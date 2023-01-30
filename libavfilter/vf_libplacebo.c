@@ -482,10 +482,11 @@ fail:
     return err;
 }
 
-static int init_vulkan(AVFilterContext *avctx, const AVVulkanDeviceContext *hwctx)
+static int init_vulkan(AVFilterContext *avctx, const AVHWDeviceContext *avhwctx)
 {
     int err = 0;
     LibplaceboContext *s = avctx->priv;
+    const AVVulkanDeviceContext *hwctx = avhwctx->hwctx;
     uint8_t *buf = NULL;
     size_t buf_len;
 
@@ -499,6 +500,11 @@ static int init_vulkan(AVFilterContext *avctx, const AVVulkanDeviceContext *hwct
             .extensions     = hwctx->enabled_dev_extensions,
             .num_extensions = hwctx->nb_enabled_dev_extensions,
             .features       = &hwctx->device_features,
+#if PL_API_VER >= 201
+            .lock_queue     = (void (*)(void *, int, int)) hwctx->lock_queue,
+            .unlock_queue   = (void (*)(void *, int, int)) hwctx->unlock_queue,
+            .queue_ctx      = (void *) avhwctx,
+#endif
             .queue_graphics = {
                 .index = hwctx->queue_family_index,
                 .count = hwctx->nb_graphics_queues,
@@ -862,17 +868,18 @@ static int libplacebo_query_format(AVFilterContext *ctx)
 {
     int err;
     LibplaceboContext *s = ctx->priv;
+    const AVHWDeviceContext *avhwctx = NULL;
     const AVVulkanDeviceContext *vkhwctx = NULL;
     const AVPixFmtDescriptor *desc = NULL;
     AVFilterFormats *infmts = NULL, *outfmts = NULL;
 
     if (ctx->hw_device_ctx) {
-        const AVHWDeviceContext *avhwctx = (void *) ctx->hw_device_ctx->data;
+        avhwctx = (void *) ctx->hw_device_ctx->data;
         if (avhwctx->type == AV_HWDEVICE_TYPE_VULKAN)
             vkhwctx = avhwctx->hwctx;
     }
 
-    RET(init_vulkan(ctx, vkhwctx));
+    RET(init_vulkan(ctx, vkhwctx ? avhwctx : NULL));
 
     while ((desc = av_pix_fmt_desc_next(desc))) {
         enum AVPixelFormat pixfmt = av_pix_fmt_desc_get_id(desc);
