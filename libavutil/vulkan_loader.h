@@ -61,6 +61,7 @@ static inline uint64_t ff_vk_extensions_to_mask(const char * const *extensions,
         { VK_EXT_VIDEO_ENCODE_H265_EXTENSION_NAME,         FF_VK_EXT_VIDEO_ENCODE_H265      },
 #endif
         { VK_KHR_VIDEO_DECODE_H265_EXTENSION_NAME,         FF_VK_EXT_VIDEO_DECODE_H265      },
+        { "VK_MESA_video_decode_av1",                      FF_VK_EXT_VIDEO_DECODE_AV1       },
     };
 
     FFVulkanExtensions mask = 0x0;

@@ -32,6 +32,7 @@ typedef struct FFVulkanDecodeShared {
 
     int dedicated_dpb; /* Oddity  #1 - separate DPB images */
     int layered_dpb;   /* Madness #1 - layered  DPB images */
+    int external_fg;   /* Oddity  #2 - hardware can't apply film grain */
 
     AVBufferRef *dpb_hwfc_ref;  /* Only used for dedicated_dpb */
 
@@ -63,6 +64,7 @@ typedef struct FFVulkanDecodeContext {
     /* Thread-synchronized data below */
     AVBufferRef *session_params;
     int params_changed;
+    uint32_t frame_id_alloc_mask; /* For AV1 only */
 } FFVulkanDecodeContext;
 
 typedef struct FFVulkanDecodePicture {
