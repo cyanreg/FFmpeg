@@ -47,6 +47,7 @@ typedef enum FFVulkanExtensions {
     FF_VK_EXT_VIDEO_ENCODE_H264      = 1ULL << 15, /* VK_EXT_video_encode_h264 */
     FF_VK_EXT_VIDEO_ENCODE_H265      = 1ULL << 16, /* VK_EXT_video_encode_h265 */
     FF_VK_EXT_VIDEO_DECODE_AV1       = 1ULL << 17, /* VK_MESA_video_decode_av1 */
+    FF_VK_EXT_ATOMIC_FLOAT           = 1ULL << 18, /* VK_EXT_shader_atomic_float */
 
     FF_VK_EXT_NO_FLAG                = 1ULL << 31,
 } FFVulkanExtensions;
