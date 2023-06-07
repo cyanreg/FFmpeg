@@ -1106,7 +1106,7 @@ int ff_vk_decode_init(AVCodecContext *avctx)
 
     /* Create decode exec context.
      * 4 async contexts per thread seems like a good number. */
-    err = ff_vk_exec_pool_init(s, &qf_dec, &ctx->exec_pool, 4*avctx->thread_count,
+    err = ff_vk_exec_pool_init(s, &qf_dec, &ctx->exec_pool, 2*avctx->thread_count,
                                nb_q, VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR, 0,
                                session_create.pVideoProfile);
     if (err < 0)
