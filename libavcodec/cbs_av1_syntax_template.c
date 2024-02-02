@@ -1572,6 +1572,17 @@ static int FUNC(uncompressed_header)(CodedBitstreamContext *ctx, RWContext *rw,
     }
 
     if (!frame_is_intra) {
+        for (i = 0; i < AV1_REFS_PER_FRAME; i++) {
+            uint8_t ref_frame = AV1_REF_FRAME_LAST + i;
+            if (seq->enable_order_hint) {
+                uint8_t hint = current->ref_order_hint[current->ref_frame_idx[i]];
+                uint8_t sign_bias = cbs_av1_get_relative_dist(seq, hint, priv->order_hint) > 0;
+                priv->order_hints[ref_frame] = hint;
+                priv->ref_frame_sign_bias[ref_frame] = sign_bias;
+            } else {
+                priv->ref_frame_sign_bias[ref_frame] = 0;
+            }
+        }
         // Derive reference frame sign biases.
     }
 
