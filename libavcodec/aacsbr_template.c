@@ -37,6 +37,16 @@
 #include "avcodec.h"
 #include "libavutil/qsort.h"
 
+typedef struct ExtChannelElement {
+    ChannelElement ch;
+    SpectralBandReplication sbr;
+} ExtChannelElement;
+
+static inline SpectralBandReplication *get_sbr(ChannelElement *ch)
+{
+    return &((ExtChannelElement*)ch)->sbr;
+}
+
 static av_cold void aacsbr_tableinit(void)
 {
     int n;
@@ -64,14 +74,18 @@ static void sbr_turnoff(SpectralBandReplication *sbr) {
     memset(&sbr->spectrum_params, -1, sizeof(SpectrumParameters));
 }
 
-av_cold int AAC_RENAME(ff_aac_sbr_ctx_init)(AACDecContext *ac, ChannelElement *che, int id_aac)
+av_cold int AAC_RENAME(ff_aac_sbr_ctx_alloc_init)(AACDecContext *ac,
+                                                  ChannelElement **che, int id_aac)
 {
-    SpectralBandReplication *sbr = &che->sbr;
+    SpectralBandReplication *sbr;
+    ExtChannelElement *ext = av_mallocz(sizeof(*ext));
     int ret;
     float scale;
 
-    if (sbr->mdct)
-        return 0;
+    if (!ext)
+        return AVERROR(ENOMEM);
+    *che = &ext->ch;
+    sbr  = &ext->sbr;
 
     sbr->kx[0] = sbr->kx[1];
     sbr->id_aac = id_aac;
@@ -105,7 +119,7 @@ av_cold int AAC_RENAME(ff_aac_sbr_ctx_init)(AACDecContext *ac, ChannelElement *c
 
 av_cold void AAC_RENAME(ff_aac_sbr_ctx_close)(ChannelElement *che)
 {
-    SpectralBandReplication *sbr = &che->sbr;
+    SpectralBandReplication *sbr = get_sbr(che);
     av_tx_uninit(&sbr->mdct);
     av_tx_uninit(&sbr->mdct_ana);
 }
@@ -1096,7 +1110,7 @@ int AAC_RENAME(ff_aac_sbr_decode_extension)(AACDecContext *ac, ChannelElement *c
                                             GetBitContext *gb_host, int crc,
                                             int cnt, int id_aac)
 {
-    SpectralBandReplication *sbr = &che->sbr;
+    SpectralBandReplication *sbr = get_sbr(che);
     unsigned int num_sbr_bits = 0, num_align_bits;
     unsigned bytes_read;
     GetBitContext gbc = *gb_host, *gb = &gbc;
@@ -1463,7 +1477,7 @@ static void sbr_env_estimate(AAC_FLOAT (*e_curr)[48], INTFLOAT X_high[64][40][2]
 void AAC_RENAME(ff_aac_sbr_apply)(AACDecContext *ac, ChannelElement *che,
                                   int id_aac, INTFLOAT* L, INTFLOAT* R)
 {
-    SpectralBandReplication *sbr = &che->sbr;
+    SpectralBandReplication *sbr = get_sbr(che);
     int downsampled = ac->oc[1].m4ac.ext_sample_rate < sbr->sample_rate;
     int ch;
     int nch = (id_aac == TYPE_CPE) ? 2 : 1;
