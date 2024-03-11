@@ -27,10 +27,10 @@
 
 #include "aacdec_tab.h"
 
-#include "aac.h"
-#include "aacps.h"
-#include "aactab.h"
-#include "vlc.h"
+#include "libavcodec/aac.h"
+#include "libavcodec/aacps.h"
+#include "libavcodec/aactab.h"
+#include "libavcodec/vlc.h"
 
 #include "libavutil/attributes.h"
 #include "libavutil/thread.h"

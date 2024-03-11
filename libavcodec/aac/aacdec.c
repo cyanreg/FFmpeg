@@ -32,10 +32,8 @@
 #include <limits.h>
 #include <stddef.h>
 
-#include "aac.h"
 #include "aacdec.h"
-#include "aacsbr.h"
-#include "avcodec.h"
+#include "libavcodec/aacsbr.h"
 #include "libavutil/attributes.h"
 #include "libavutil/error.h"
 #include "libavutil/log.h"
