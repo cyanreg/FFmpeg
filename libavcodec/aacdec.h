@@ -201,7 +201,7 @@ typedef struct DynamicRangeControl {
 } DynamicRangeControl;
 
 /**
- * Decode-specific primitives
+ * DSP-specific primitives
  */
 typedef struct AACDecDSP {
     void (*init_tables)(void);
