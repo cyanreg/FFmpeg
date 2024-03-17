@@ -68,9 +68,6 @@ typedef struct AV1VulkanDecodePicture {
     const AV1Frame                     *ref_src   [AV1_NUM_REF_FRAMES];
     StdVideoDecodeAV1ReferenceInfo      std_refs  [AV1_NUM_REF_FRAMES];
     VkVideoDecodeAV1DpbSlotInfoKHR      vkav1_refs[AV1_NUM_REF_FRAMES];
-
-    uint8_t frame_id_set;
-    uint8_t frame_id;
 } AV1VulkanDecodePicture;
 
 static int vk_av1_fill_pict(AVCodecContext *avctx, const AV1Frame **ref_src,
@@ -78,7 +75,7 @@ static int vk_av1_fill_pict(AVCodecContext *avctx, const AV1Frame **ref_src,
                             VkVideoPictureResourceInfoKHR *ref,         /* Goes in ^ */
                             StdVideoDecodeAV1ReferenceInfo *vkav1_std_ref,
                             VkVideoDecodeAV1DpbSlotInfoKHR *vkav1_ref, /* Goes in ^ */
-                            const AV1Frame *pic, int is_current, int has_grain)
+                            const AV1Frame *pic, int is_current, int has_grain, int slot)
 {
     FFVulkanDecodeContext *dec = avctx->internal->hwaccel_priv_data;
     AV1VulkanDecodePicture *hp = pic->hwaccel_picture_private;
@@ -135,7 +132,7 @@ static int vk_av1_fill_pict(AVCodecContext *avctx, const AV1Frame **ref_src,
     *ref_slot = (VkVideoReferenceSlotInfoKHR) {
         .sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
         .pNext = vkav1_ref,
-        .slotIndex = hp->frame_id,
+        .slotIndex = slot,
         .pPictureResource = ref,
     };
 
@@ -268,42 +265,30 @@ static int vk_av1_start_frame(AVCodecContext          *avctx,
             return err;
     }
 
-#if 0
-    if (!ap->frame_id_set) {
-        unsigned slot_idx = 0;
-        for (unsigned i = 0; i < 32; i++) {
-            if (!(dec->frame_id_alloc_mask & (1 << i))) {
-                slot_idx = i;
-                break;
-            }
-        }
-        ap->frame_id = slot_idx;
-        ap->frame_id_set = 1;
-        dec->frame_id_alloc_mask |= (1 << slot_idx);
-    }
-#endif
+    int cur_frame_slot = AV1_REF_FRAME_INTRA;
 
     /* Fill in references */
-    for (int i = 0; i < AV1_NUM_REF_FRAMES; i++) {
-        const AV1Frame *ref_frame = &s->ref[i];
+    for (int i = 0; i < AV1_REFS_PER_FRAME; i++) {
+        int idx = frame_header->ref_frame_idx[i];
+
+        /* References in ffmpeg are indexed this way */
+        const AV1Frame *ref_frame = &s->ref[idx + AV1_REF_FRAME_LAST];
         AV1VulkanDecodePicture *hp = ref_frame->hwaccel_picture_private;
-        int found = 0;
 
-        if (s->ref[i].f->pict_type == AV_PICTURE_TYPE_NONE)
+        if (s->ref[i].f->pict_type == AV_PICTURE_TYPE_NONE) {
+            vp->ref_slots[ref_count] = (VkVideoReferenceSlotInfoKHR) {
+                .sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR,
+                .pNext = NULL,
+                .slotIndex = AV1_REF_FRAME_NONE,
+                .pPictureResource = NULL,
+            };
+            ref_count++;
             continue;
-
-        for (int j = 0; j < ref_count; j++) {
-            if (vp->ref_slots[j].slotIndex == hp->frame_id) {
-                found = 1;
-                break;
-            }
         }
-        if (found)
-            continue;
 
-        err = vk_av1_fill_pict(avctx, &ap->ref_src[ref_count], &vp->ref_slots[ref_count],
-                               &vp->refs[ref_count], &ap->std_refs[ref_count], &ap->vkav1_refs[ref_count],
-                               ref_frame, 0, 0);
+        err = vk_av1_fill_pict(avctx, &ap->ref_src[idx], &vp->ref_slots[idx],
+                               &vp->refs[idx], &ap->std_refs[idx], &ap->vkav1_refs[idx],
+                               ref_frame, 0, 0, frame_header->ref_frame_idx[idx]);
         if (err < 0)
             return err;
 
@@ -313,7 +298,7 @@ static int vk_av1_start_frame(AVCodecContext          *avctx,
     err = vk_av1_fill_pict(avctx, NULL, &vp->ref_slot, &vp->ref,
                            &ap->std_ref,
                            &ap->vkav1_ref,
-                           pic, 1, apply_grain);
+                           pic, 1, apply_grain, cur_frame_slot);
     if (err < 0)
         return err;
 
@@ -326,16 +311,8 @@ static int vk_av1_start_frame(AVCodecContext          *avctx,
         .pTileSizes = ap->tile_sizes,
     };
 
-    for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++) {
-        const int idx = pic->raw_frame_header->ref_frame_idx[i];
-        const AV1Frame *ref_frame = &s->ref[idx];
-        AV1VulkanDecodePicture *hp = ref_frame->hwaccel_picture_private;
-
-        if (s->ref[i].f->pict_type == AV_PICTURE_TYPE_NONE)
-            ap->av1_pic_info.referenceNameSlotIndices[i] = AV1_REF_FRAME_NONE;
-        else
-            ap->av1_pic_info.referenceNameSlotIndices[i] = hp->frame_id;
-    }
+    for (int i = 0; i < STD_VIDEO_AV1_REFS_PER_FRAME; i++)
+        ap->av1_pic_info.referenceNameSlotIndices[i] = frame_header->ref_frame_idx[i];
 
     vp->decode_info = (VkVideoDecodeInfoKHR) {
         .sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR,
@@ -492,12 +469,13 @@ static int vk_av1_start_frame(AVCodecContext          *avctx,
         ap->mi_row_starts[i] = frame_header->tile_start_row_sb[i];
     }
 
-    for (int i = 0; i < STD_VIDEO_AV1_MAX_SEGMENTS; i++)
+    for (int i = 0; i < STD_VIDEO_AV1_MAX_SEGMENTS; i++) {
         ap->segmentation.FeatureEnabled[i] = 0x0;
         for (int j = 0; j < STD_VIDEO_AV1_SEG_LVL_MAX; j++) {
             ap->segmentation.FeatureEnabled[i] |= (frame_header->feature_enabled[i][j] << j);
             ap->segmentation.FeatureData[i][j] = frame_header->feature_value[i][j];
         }
+    }
 
     for (int i = 0; i < STD_VIDEO_AV1_TOTAL_REFS_PER_FRAME; i++)
         ap->loop_filter.loop_filter_ref_deltas[i] = frame_header->loop_filter_ref_deltas[i];
@@ -509,7 +487,7 @@ static int vk_av1_start_frame(AVCodecContext          *avctx,
         ap->cdef.cdef_uv_sec_strength[i] = frame_header->cdef_uv_sec_strength[i];
     }
 
-    for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++)
+    for (int i = 0; i < STD_VIDEO_AV1_NUM_REF_FRAMES; i++) {
         ap->std_pic_info.OrderHints[i] = frame_header->ref_order_hint[i];
         ap->global_motion.GmType[i] = s->cur_frame.gm_type[i];
         for (int j = 0; j < STD_VIDEO_AV1_GLOBAL_MOTION_PARAMS; j++) {
@@ -609,12 +587,6 @@ static void vk_av1_free_frame_priv(FFRefStructOpaque _hwctx, void *data)
 {
     AVHWDeviceContext *hwctx = _hwctx.nc;
     AV1VulkanDecodePicture *ap = data;
-
-#if 0
-    /* Workaround for a spec issue. */
-    if (ap->frame_id_set)
-        ap->dec->frame_id_alloc_mask &= ~(1 << ap->frame_id);
-#endif
 
     /* Free frame resources, this also destroys the session parameters. */
     ff_vk_decode_free_frame(hwctx, &ap->vp);
