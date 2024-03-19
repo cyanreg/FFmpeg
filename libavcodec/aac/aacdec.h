@@ -38,8 +38,8 @@
 #include "libavutil/mem_internal.h"
 #include "libavutil/tx.h"
 
-#include "aac.h"
-#include "mpeg4audio.h"
+#include "libavcodec/aac.h"
+#include "libavcodec/mpeg4audio.h"
 
 typedef struct AACDecContext AACDecContext;
 
