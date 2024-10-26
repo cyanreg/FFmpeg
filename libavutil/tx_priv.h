@@ -384,6 +384,7 @@ int ff_tx_mdct_gen_exp_int32 (AVTXContext *s, int *pre_tab);
 extern const FFTXCodelet * const ff_tx_codelet_list_float_c       [];
 extern const FFTXCodelet * const ff_tx_codelet_list_float_x86     [];
 extern const FFTXCodelet * const ff_tx_codelet_list_float_aarch64 [];
+extern const FFTXCodelet * const ff_tx_codelet_list_float_rvv     [];
 
 extern const FFTXCodelet * const ff_tx_codelet_list_double_c      [];
 

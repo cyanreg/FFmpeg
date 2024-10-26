@@ -348,6 +348,9 @@ static const FFTXCodelet * const * const codelet_list[] = {
 #if ARCH_AARCH64
     ff_tx_codelet_list_float_aarch64,
 #endif
+#if ARCH_RISCV
+    ff_tx_codelet_list_float_rvv,
+#endif
 };
 static const int codelet_list_num = FF_ARRAY_ELEMS(codelet_list);
 
