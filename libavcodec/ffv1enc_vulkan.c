@@ -32,6 +32,7 @@
 
 #include "ffv1.h"
 #include "ffv1enc.h"
+#include "ffv1_vulkan_common.h"
 
 /* Parallel Golomb alignment */
 #define LG_ALIGN_W 32
@@ -109,11 +110,6 @@ typedef struct VulkanEncodeFFv1Context {
     int chunks;
 } VulkanEncodeFFv1Context;
 
-extern const char *ff_source_common_comp;
-extern const char *ff_source_rangecoder_comp;
-extern const char *ff_source_ffv1_vlc_comp;
-extern const char *ff_source_ffv1_common_comp;
-extern const char *ff_source_ffv1_reset_comp;
 extern const char *ff_source_ffv1_enc_common_comp;
 extern const char *ff_source_ffv1_enc_rct_comp;
 extern const char *ff_source_ffv1_enc_vlc_comp;
@@ -129,15 +125,6 @@ typedef struct FFv1VkRCTParameters {
     uint8_t transparency;
     uint8_t padding[1];
 } FFv1VkRCTParameters;
-
-typedef struct FFv1VkResetParameters {
-    VkDeviceAddress slice_state;
-    uint32_t plane_state_size;
-    uint32_t context_count;
-    uint8_t codec_planes;
-    uint8_t key_frame;
-    uint8_t padding[3];
-} FFv1VkResetParameters;
 
 typedef struct FFv1VkParameters {
     VkDeviceAddress slice_state;
@@ -949,36 +936,11 @@ end:
     return fmt;
 }
 
-static void define_shared_code(AVCodecContext *avctx, FFVulkanShader *shd)
-{
-    VulkanEncodeFFv1Context *fv = avctx->priv_data;
-    FFV1Context *f = &fv->ctx;
-    int smp_bits = fv->ctx.use32bit ? 32 : 16;
-
-    av_bprintf(&shd->src, "#define CONTEXT_SIZE %i\n"                    ,CONTEXT_SIZE);
-    av_bprintf(&shd->src, "#define MAX_QUANT_TABLE_MASK 0x%x\n"          ,MAX_QUANT_TABLE_MASK);
-
-    if (f->ac == AC_GOLOMB_RICE) {
-        av_bprintf(&shd->src, "#define PB_UNALIGNED\n"                   );
-        av_bprintf(&shd->src, "#define GOLOMB\n"                         );
-    }
-
-    GLSLF(0, #define TYPE int%i_t                                        ,smp_bits);
-    GLSLF(0, #define VTYPE2 i%ivec2                                      ,smp_bits);
-    GLSLF(0, #define VTYPE3 i%ivec3                                      ,smp_bits);
-    GLSLD(ff_source_common_comp);
-    GLSLD(ff_source_rangecoder_comp);
-
-    if (f->ac == AC_GOLOMB_RICE)
-        GLSLD(ff_source_ffv1_vlc_comp);
-
-    GLSLD(ff_source_ffv1_common_comp);
-}
-
 static int init_setup_shader(AVCodecContext *avctx, FFVkSPIRVCompiler *spv)
 {
     int err;
     VulkanEncodeFFv1Context *fv = avctx->priv_data;
+    FFV1Context *f = &fv->ctx;
     FFVulkanShader *shd = &fv->setup;
     FFVulkanDescriptorSetBinding *desc_set;
 
@@ -1016,7 +978,7 @@ static int init_setup_shader(AVCodecContext *avctx, FFVkSPIRVCompiler *spv)
     };
     RET(ff_vk_shader_add_descriptor_set(&fv->s, shd, desc_set, 2, 1, 0));
 
-    define_shared_code(avctx, shd);
+    ff_ffv1_vk_define_shared_code(f, shd);
 
     desc_set = (FFVulkanDescriptorSetBinding []) {
         {
@@ -1055,91 +1017,11 @@ fail:
     return err;
 }
 
-static int init_reset_shader(AVCodecContext *avctx, FFVkSPIRVCompiler *spv)
-{
-    int err;
-    VulkanEncodeFFv1Context *fv = avctx->priv_data;
-    FFVulkanShader *shd = &fv->reset;
-    FFVulkanDescriptorSetBinding *desc_set;
-
-    uint8_t *spv_data;
-    size_t spv_len;
-    void *spv_opaque = NULL;
-    int wg_dim = FFMIN(fv->s.props.properties.limits.maxComputeWorkGroupSize[0], 1024);
-
-    RET(ff_vk_shader_init(&fv->s, shd, "ffv1_reset",
-                          VK_SHADER_STAGE_COMPUTE_BIT,
-                          (const char *[]) { "GL_EXT_buffer_reference",
-                                             "GL_EXT_buffer_reference2" }, 2,
-                          wg_dim, 1, 1,
-                          0));
-
-    av_bprintf(&shd->src, "#define MAX_QUANT_TABLES %i\n", MAX_QUANT_TABLES);
-    av_bprintf(&shd->src, "#define MAX_CONTEXT_INPUTS %i\n", MAX_CONTEXT_INPUTS);
-    av_bprintf(&shd->src, "#define MAX_QUANT_TABLE_SIZE %i\n", MAX_QUANT_TABLE_SIZE);
-
-    desc_set = (FFVulkanDescriptorSetBinding []) {
-        {
-            .name        = "rangecoder_static_buf",
-            .type        = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
-            .mem_layout  = "scalar",
-            .buf_content = "uint8_t zero_one_state[512];",
-        },
-        {
-            .name        = "quant_buf",
-            .type        = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-            .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
-            .mem_layout  = "scalar",
-            .buf_content = "int16_t quant_table[MAX_QUANT_TABLES]"
-                           "[MAX_CONTEXT_INPUTS][MAX_QUANT_TABLE_SIZE];",
-        },
-    };
-    RET(ff_vk_shader_add_descriptor_set(&fv->s, shd, desc_set, 2, 1, 0));
-
-    define_shared_code(avctx, shd);
-
-    desc_set = (FFVulkanDescriptorSetBinding []) {
-        {
-            .name        = "slice_data_buf",
-            .type        = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            .mem_quali   = "readonly",
-            .stages      = VK_SHADER_STAGE_COMPUTE_BIT,
-            .buf_content = "SliceContext slice_ctx[1024];",
-        },
-    };
-    RET(ff_vk_shader_add_descriptor_set(&fv->s, shd, desc_set, 1, 0, 0));
-
-    GLSLC(0, layout(push_constant, scalar) uniform pushConstants {             );
-    GLSLC(1,    u8buf slice_state;                                             );
-    GLSLC(1,    uint plane_state_size;                                         );
-    GLSLC(1,    uint context_count;                                            );
-    GLSLC(1,    uint8_t codec_planes;                                          );
-    GLSLC(1,    uint8_t key_frame;                                             );
-    GLSLC(1,    uint8_t padding[3];                                            );
-    GLSLC(0, };                                                                );
-    ff_vk_shader_add_push_const(shd, 0, sizeof(FFv1VkResetParameters),
-                                VK_SHADER_STAGE_COMPUTE_BIT);
-
-    GLSLD(ff_source_ffv1_reset_comp);
-
-    RET(spv->compile_shader(&fv->s, spv, shd, &spv_data, &spv_len, "main",
-                            &spv_opaque));
-    RET(ff_vk_shader_link(&fv->s, shd, spv_data, spv_len, "main"));
-
-    RET(ff_vk_shader_register_exec(&fv->s, &fv->exec_pool, shd));
-
-fail:
-    if (spv_opaque)
-        spv->free_shader(spv, &spv_opaque);
-
-    return err;
-}
-
 static int init_rct_shader(AVCodecContext *avctx, FFVkSPIRVCompiler *spv)
 {
     int err;
     VulkanEncodeFFv1Context *fv = avctx->priv_data;
+    FFV1Context *f = &fv->ctx;
     FFVulkanShader *shd = &fv->rct;
     FFVulkanDescriptorSetBinding *desc_set;
 
@@ -1187,7 +1069,7 @@ static int init_rct_shader(AVCodecContext *avctx, FFVkSPIRVCompiler *spv)
     };
     RET(ff_vk_shader_add_descriptor_set(&fv->s, shd, desc_set, 2, 1, 0));
 
-    define_shared_code(avctx, shd);
+    ff_ffv1_vk_define_shared_code(f, shd);
 
     desc_set = (FFVulkanDescriptorSetBinding []) {
         {
@@ -1299,7 +1181,7 @@ static int init_encode_shader(AVCodecContext *avctx, FFVkSPIRVCompiler *spv)
 
     RET(ff_vk_shader_add_descriptor_set(&fv->s, shd, desc_set, 3, 1, 0));
 
-    define_shared_code(avctx, shd);
+    ff_ffv1_vk_define_shared_code(f, shd);
 
     desc_set = (FFVulkanDescriptorSetBinding []) {
         {
@@ -1677,7 +1559,7 @@ static av_cold int vulkan_encode_ffv1_init(AVCodecContext *avctx)
     }
 
     /* Init reset shader */
-    err = init_reset_shader(avctx, spv);
+    err = ff_ffv1_vk_init_reset_shader(f, &fv->s, &fv->exec_pool, spv, &fv->reset);
     if (err < 0) {
         spv->uninit(&spv);
         return err;
