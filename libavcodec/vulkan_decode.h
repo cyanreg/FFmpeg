@@ -56,6 +56,14 @@ typedef struct FFVulkanDecodeShared {
     VkVideoDecodeCapabilitiesKHR dec_caps;
 
     VkVideoSessionParametersKHR empty_session_params;
+
+    /* This part is only used by software-defined decoders */
+    FFVulkanShader shd_start;
+    FFVulkanShader shd_decode;
+    FFVulkanShader shd_end;
+
+    FFVkBuffer     static_buf[8];
+    AVBufferPool  *dynamic_pool[8];
 } FFVulkanDecodeShared;
 
 typedef struct FFVulkanDecodeContext {
