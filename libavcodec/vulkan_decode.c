@@ -33,6 +33,9 @@ extern const FFVulkanDecodeDescriptor ff_vk_dec_hevc_desc;
 #if CONFIG_AV1_VULKAN_HWACCEL
 extern const FFVulkanDecodeDescriptor ff_vk_dec_av1_desc;
 #endif
+#if CONFIG_FFV1_VULKAN_HWACCEL
+extern const FFVulkanDecodeDescriptor ff_vk_dec_ffv1_desc;
+#endif
 
 static const FFVulkanDecodeDescriptor *dec_descs[] = {
 #if CONFIG_H264_VULKAN_HWACCEL
@@ -43,6 +46,9 @@ static const FFVulkanDecodeDescriptor *dec_descs[] = {
 #endif
 #if CONFIG_AV1_VULKAN_HWACCEL
     &ff_vk_dec_av1_desc,
+#endif
+#if CONFIG_FFV1_VULKAN_HWACCEL
+    &ff_vk_dec_ffv1_desc,
 #endif
 };
 
