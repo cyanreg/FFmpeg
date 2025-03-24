@@ -17,6 +17,8 @@ OBJS-$(CONFIG_FFV1_VULKAN_HWACCEL)  +=  vulkan/common.o \
 					vulkan/ffv1_dec_setup.o vulkan/ffv1_dec.o \
 					vulkan/ffv1_dec_rct.o
 
+OBJS-$(CONFIG_AAC_ENCODER) += vulkan/nls.o
+
 VULKAN = $(subst $(SRC_PATH)/,,$(wildcard $(SRC_PATH)/libavcodec/vulkan/*.comp))
 .SECONDARY: $(VULKAN:.comp=.c)
 libavcodec/vulkan/%.c: TAG = VULKAN

@@ -28,6 +28,7 @@
 #include "libavutil/float_dsp.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/tx.h"
+#include "libavutil/vulkan.h"
 
 #include "avcodec.h"
 #include "put_bits.h"
@@ -217,6 +218,12 @@ typedef struct AACEncContext {
     AACQuantizeBandCostCacheEntry quantize_band_cost_cache[256][128]; ///< memoization area for quantize_band_cost
 
     AACEncDSPContext aacdsp;
+
+    AVBufferRef *dev_ref;
+    FFVulkanContext vkctx;
+    AVVulkanDeviceQueueFamily *qf;
+    FFVkExecPool exec;
+    FFVulkanShader nls;
 
     struct {
         float *samples;

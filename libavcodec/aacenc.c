@@ -35,6 +35,8 @@
 #include "libavutil/float_dsp.h"
 #include "libavutil/mem.h"
 #include "libavutil/opt.h"
+#include "libavutil/vulkan_spirv.h"
+
 #include "avcodec.h"
 #include "codec_internal.h"
 #include "encode.h"
@@ -51,6 +53,8 @@
 #include "aacenc_utils.h"
 
 #include "psymodel.h"
+
+extern const char *ff_source_nls_comp;
 
 /**
  * List of PCE (Program Configuration Element) for the channel layouts listed
@@ -1182,6 +1186,48 @@ static av_cold int alloc_buffers(AVCodecContext *avctx, AACEncContext *s)
     return 0;
 }
 
+static int init_shader(FFVulkanContext *s, FFVkExecPool *pool,
+                       FFVulkanShader *shd, FFVkSPIRVCompiler *spv)
+{
+    int err;
+    FFVulkanDescriptorSetBinding *desc_set;
+
+    uint8_t *spv_data;
+    size_t spv_len;
+    void *spv_opaque = NULL;
+    int wg_dim = FFMIN(s->props.properties.limits.maxComputeWorkGroupSize[0], 1024);
+
+    err = ff_vk_shader_init(s, shd, "nls", VK_SHADER_STAGE_COMPUTE_BIT,
+                            (const char *[]) { "GLSL_KHR_cooperative_matrix",
+                                               "GLSL_NV_cooperative_matrix2" }, 2,
+                            wg_dim, 1, 1,
+                            0);
+    if (err < 0)
+        return err;
+
+    GLSLC(0, layout(push_constant, scalar) uniform pushConstants {             );
+    GLSLC(1,    uint plane_state_size;                                         );
+    GLSLC(0, };                                                                );
+    ff_vk_shader_add_push_const(shd, 0, 4,
+                                VK_SHADER_STAGE_COMPUTE_BIT);
+
+
+
+    GLSLD(ff_source_nls_comp);
+
+    RET(spv->compile_shader(s, spv, shd, &spv_data, &spv_len, "main",
+                            &spv_opaque));
+    RET(ff_vk_shader_link(s, shd, spv_data, spv_len, "main"));
+
+    RET(ff_vk_shader_register_exec(s, pool, shd));
+
+fail:
+    if (spv_opaque)
+        spv->free_shader(spv, &spv_opaque);
+
+    return 0;
+}
+
 static av_cold int aac_encode_init(AVCodecContext *avctx)
 {
     AACEncContext *s = avctx->priv_data;
@@ -1302,6 +1348,47 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     ff_aacenc_dsp_init(&s->aacdsp);
 
     ff_af_queue_init(avctx, &s->afq);
+
+    /* Init vulkan */
+    {
+        int err;
+        AVDictionary *dev_opts = NULL;
+        FFVkSPIRVCompiler *spv = NULL;
+
+        err = av_dict_set(&dev_opts, "device_extensions", "VK_NV_cooperative_matrix2", 0);
+        if (err < 0)
+            return err;
+
+        err = av_hwdevice_ctx_create(&s->dev_ref, AV_HWDEVICE_TYPE_VULKAN, "0", dev_opts, 0);
+        if (err < 0)
+            return err;
+
+        av_hwdevice_ctx_init(s->dev_ref);
+        if (err < 0)
+            return err;
+
+        err = ff_vk_init(&s->vkctx, avctx, s->dev_ref, NULL);
+        if (err < 0)
+            return err;
+
+        s->qf = ff_vk_qf_find(&s->vkctx, VK_QUEUE_COMPUTE_BIT, 0);
+        if (!s->qf)
+            return AVERROR(ENOTSUP);
+
+        err = ff_vk_exec_pool_init(&s->vkctx, s->qf, &s->exec, 1, 0, 0, 0, 0);
+        if (err < 0)
+            return err;
+
+        spv = ff_vk_spirv_init();
+        if (!spv) {
+            av_log(avctx, AV_LOG_ERROR, "Unable to initialize SPIR-V compiler!\n");
+            return AVERROR_EXTERNAL;
+        }
+
+        err = init_shader(&s->vkctx, &s->exec, &s->nls, spv);
+        if (err < 0)
+            return err;
+    }
 
     return 0;
 }
