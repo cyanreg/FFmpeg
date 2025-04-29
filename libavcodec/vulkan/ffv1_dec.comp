@@ -29,19 +29,19 @@
 #endif
 
 #ifdef RGB
-ivec2 get_pred(ivec2 sp, ivec2 off, int p, int sw, uint8_t quant_table_idx)
+ivec2 get_pred(ivec2 sp, ivec2 off, int p, int comp, int sw, uint8_t quant_table_idx)
 {
     const ivec2 yoff_border1 = expectEXT(off.x == 0, false) ? ivec2(1, -1) : ivec2(0, 0);
 
     /* Thanks to the same coincidence as below, we can skip checking if off == 0, 1 */
-    VTYPE3 top  = VTYPE3(TYPE(imageLoad(dec[p], sp + LADDR(off + ivec2(-1, -1) + yoff_border1))[0]),
-                         TYPE(imageLoad(dec[p], sp + LADDR(off + ivec2(0, -1)))[0]),
-                         TYPE(imageLoad(dec[p], sp + LADDR(off + ivec2(min(1, sw - off.x - 1), -1)))[0]));
+    VTYPE3 top  = VTYPE3(TYPE(imageLoad(dec[p], sp + LADDR(off + ivec2(-1, -1) + yoff_border1))[comp]),
+                         TYPE(imageLoad(dec[p], sp + LADDR(off + ivec2(0, -1)))[comp]),
+                         TYPE(imageLoad(dec[p], sp + LADDR(off + ivec2(min(1, sw - off.x - 1), -1)))[comp]));
 
     /* Normally, we'd need to check if off != ivec2(0, 0) here, since otherwise, we must
      * return zero. However, ivec2(-1,  0) + ivec2(1, -1) == ivec2(0, -1), e.g. previous
      * row, 0 offset, same slice, which is zero since we zero out the buffer for RGB */
-    TYPE cur = TYPE(imageLoad(dec[p], sp + LADDR(off + ivec2(-1,  0) + yoff_border1))[0]);
+    TYPE cur = TYPE(imageLoad(dec[p], sp + LADDR(off + ivec2(-1,  0) + yoff_border1))[comp]);
 
     int base = quant_table[quant_table_idx][0][(cur    - top[0]) & MAX_QUANT_TABLE_MASK] +
                quant_table[quant_table_idx][1][(top[0] - top[1]) & MAX_QUANT_TABLE_MASK] +
@@ -51,12 +51,12 @@ ivec2 get_pred(ivec2 sp, ivec2 off, int p, int sw, uint8_t quant_table_idx)
         TYPE cur2 = TYPE(0);
         if (expectEXT(off.x > 0, true)) {
             const ivec2 yoff_border2 = expectEXT(off.x == 1, false) ? ivec2(-1, -1) : ivec2(-2, 0);
-            cur2 = TYPE(imageLoad(dec[p], sp + LADDR(off + yoff_border2))[0]);
+            cur2 = TYPE(imageLoad(dec[p], sp + LADDR(off + yoff_border2))[comp]);
         }
         base += quant_table[quant_table_idx][3][(cur2 - cur) & MAX_QUANT_TABLE_MASK];
 
         /* top-2 became current upon swap */
-        TYPE top2 = TYPE(imageLoad(dec[p], sp + LADDR(off))[0]);
+        TYPE top2 = TYPE(imageLoad(dec[p], sp + LADDR(off))[comp]);
         base += quant_table[quant_table_idx][4][(top2 - top[1]) & MAX_QUANT_TABLE_MASK];
     }
 
@@ -64,7 +64,7 @@ ivec2 get_pred(ivec2 sp, ivec2 off, int p, int sw, uint8_t quant_table_idx)
     return ivec2(base, predict(cur, VTYPE2(top)));
 }
 #else
-ivec2 get_pred(ivec2 sp, ivec2 off, int p, int sw, uint8_t quant_table_idx)
+ivec2 get_pred(ivec2 sp, ivec2 off, int p, int comp, int sw, uint8_t quant_table_idx)
 {
     const ivec2 yoff_border1 = off.x == 0 ? ivec2(1, -1) : ivec2(0, 0);
     sp += off;
@@ -73,15 +73,15 @@ ivec2 get_pred(ivec2 sp, ivec2 off, int p, int sw, uint8_t quant_table_idx)
                          TYPE(0),
                          TYPE(0));
     if (off.y > 0 && off != ivec2(0, 1))
-        top[0] = TYPE(imageLoad(dec[p], sp + ivec2(-1, -1) + yoff_border1)[0]);
+        top[0] = TYPE(imageLoad(dec[p], sp + ivec2(-1, -1) + yoff_border1)[comp]);
     if (off.y > 0) {
-        top[1] = TYPE(imageLoad(dec[p], sp + ivec2(0, -1))[0]);
-        top[2] = TYPE(imageLoad(dec[p], sp + ivec2(min(1, sw - off.x - 1), -1))[0]);
+        top[1] = TYPE(imageLoad(dec[p], sp + ivec2(0, -1))[comp]);
+        top[2] = TYPE(imageLoad(dec[p], sp + ivec2(min(1, sw - off.x - 1), -1))[comp]);
     }
 
     TYPE cur = TYPE(0);
     if (off != ivec2(0, 0))
-        cur = TYPE(imageLoad(dec[p], sp + ivec2(-1,  0) + yoff_border1)[0]);
+        cur = TYPE(imageLoad(dec[p], sp + ivec2(-1,  0) + yoff_border1)[comp]);
 
     int base = quant_table[quant_table_idx][0][(cur - top[0]) & MAX_QUANT_TABLE_MASK] +
                quant_table[quant_table_idx][1][(top[0] - top[1]) & MAX_QUANT_TABLE_MASK] +
@@ -92,13 +92,13 @@ ivec2 get_pred(ivec2 sp, ivec2 off, int p, int sw, uint8_t quant_table_idx)
         TYPE cur2 = TYPE(0);
         if (off.x > 0 && off != ivec2(1, 0)) {
             const ivec2 yoff_border2 = off.x == 1 ? ivec2(1, -1) : ivec2(0, 0);
-            cur2 = TYPE(imageLoad(dec[p], sp + ivec2(-2,  0) + yoff_border2)[0]);
+            cur2 = TYPE(imageLoad(dec[p], sp + ivec2(-2,  0) + yoff_border2)[comp]);
         }
         base += quant_table[quant_table_idx][3][(cur2 - cur) & MAX_QUANT_TABLE_MASK];
 
         TYPE top2 = TYPE(0);
         if (off.y > 1)
-            top2 = TYPE(imageLoad(dec[p], sp + ivec2(0, -2))[0]);
+            top2 = TYPE(imageLoad(dec[p], sp + ivec2(0, -2))[comp]);
         base += quant_table[quant_table_idx][4][(top2 - top[1]) & MAX_QUANT_TABLE_MASK];
     }
 
@@ -106,6 +106,18 @@ ivec2 get_pred(ivec2 sp, ivec2 off, int p, int sw, uint8_t quant_table_idx)
     return ivec2(base, predict(cur, VTYPE2(top)));
 }
 #endif
+
+void writeout(ivec2 sp, ivec2 off, int p, int comp, uint v)
+{
+#ifndef RGB
+    ivec2 pos = sp + off;
+    uvec4 tmp = imageLoad(dec[p], pos);
+    tmp[comp] = v;
+    imageStore(dec[p], pos, tmp);
+#else
+    imageStore(dec[0], sp + LADDR(off), uvec4(v));
+#endif
+}
 
 #ifndef GOLOMB
 #ifdef CACHED_SYMBOL_READER
@@ -141,7 +153,7 @@ int get_isymbol(inout RangeCoder c, uint state_off)
     return READ(c, min(e + 10, 21)) ? -a : a;
 }
 
-void decode_line_pcm(inout SliceContext sc, ivec2 sp, int w, int y, int p, int bits)
+void decode_line_pcm(inout SliceContext sc, ivec2 sp, int w, int y, int p, int comp, int bits)
 {
 #ifndef RGB
     if (p > 0 && p < 3) {
@@ -155,12 +167,12 @@ void decode_line_pcm(inout SliceContext sc, ivec2 sp, int w, int y, int p, int b
         for (int i = (bits - 1); i >= 0; i--)
             v |= uint(get_rac_equi(sc.c)) << i;
 
-        imageStore(dec[p], sp + LADDR(ivec2(x, y)), uvec4(v));
+        writeout(sp, ivec2(x, y), p, comp, v);
     }
 }
 
 void decode_line(inout SliceContext sc, ivec2 sp, int w,
-                 int y, int p, int bits, uint state_off,
+                 int y, int p, int comp, int bits, uint state_off,
                  uint8_t quant_table_idx, const int run_index)
 {
 #ifndef RGB
@@ -171,7 +183,7 @@ void decode_line(inout SliceContext sc, ivec2 sp, int w,
 #endif
 
     for (int x = 0; x < w; x++) {
-        ivec2 pr = get_pred(sp, ivec2(x, y), p, w,
+        ivec2 pr = get_pred(sp, ivec2(x, y), p, comp, w,
                             quant_table_idx);
 
         uint context_off = state_off + CONTEXT_SIZE*abs(pr[0]);
@@ -188,7 +200,7 @@ void decode_line(inout SliceContext sc, ivec2 sp, int w,
                 diff = -diff;
 
             uint v = zero_extend(pr[1] + diff, bits);
-            imageStore(dec[p], sp + LADDR(ivec2(x, y)), uvec4(v));
+            writeout(sp, ivec2(x, y), p, comp, v);
 
 #ifdef CACHED_SYMBOL_READER
         }
@@ -200,7 +212,7 @@ void decode_line(inout SliceContext sc, ivec2 sp, int w,
 #else /* GOLOMB */
 
 void decode_line(inout SliceContext sc, ivec2 sp, int w,
-                 int y, int p, int bits, uint state_off,
+                 int y, int p, int comp, int bits, uint state_off,
                  uint8_t quant_table_idx, inout int run_index)
 {
 #ifndef RGB
@@ -216,7 +228,7 @@ void decode_line(inout SliceContext sc, ivec2 sp, int w,
     for (int x = 0; x < w; x++) {
         ivec2 pos = sp + ivec2(x, y);
         int diff;
-        ivec2 pr = get_pred(sp, ivec2(x, y), p, w,
+        ivec2 pr = get_pred(sp, ivec2(x, y), p, comp, w,
                             quant_table_idx);
 
         VlcState sb = VlcState(uint64_t(slice_state) + state_off + VLC_STATE_SIZE*abs(pr[0]));
@@ -261,7 +273,7 @@ void decode_line(inout SliceContext sc, ivec2 sp, int w,
             diff = -diff;
 
         uint v = zero_extend(pr[1] + diff, bits);
-        imageStore(dec[p], sp + LADDR(ivec2(x, y)), uvec4(v));
+        writeout(sp, ivec2(x, y), p, comp, v);
     }
 }
 #endif
@@ -325,18 +337,21 @@ void decode_slice(inout SliceContext sc, const uint slice_idx)
         if (gl_LocalInvocationID.x > 0)
             return;
 #ifndef RGB
-        for (int p = 0; p < planes; p++) {
+        for (int c = 0; c < color_planes; c++) {
             int h = sc.slice_dim.y;
-            if (p > 0 && p < 3)
+            if (c > 0 && c < 3)
                 h >>= chroma_shift.y;
 
+            int p = min(c, planes - 1);
+            int comp = c - p;
+
             for (int y = 0; y < h; y++)
-                decode_line_pcm(sc, sp, w, y, p, bits);
+                decode_line_pcm(sc, sp, w, y, p, comp, bits);
         }
 #else
         for (int y = 0; y < sc.slice_dim.y; y++) {
             for (int p = 0; p < color_planes; p++)
-                decode_line_pcm(sc, sp, w, y, p, bits);
+                decode_line_pcm(sc, sp, w, y, p, 0, bits);
 
             writeout_rgb(sc, sp, w, y, false);
         }
@@ -350,19 +365,23 @@ void decode_slice(inout SliceContext sc, const uint slice_idx)
         u32vec4 slice_state_off = (slice_idx*codec_planes + uvec4(0, 1, 1, 2))*plane_state_size;
 
 #ifndef RGB
-        for (int p = 0; p < planes; p++) {
+        for (int c = 0; c < color_planes; c++) {
+
             int h = sc.slice_dim.y;
-            if (p > 0 && p < 3)
+            if (c > 0 && c < 3)
                 h >>= chroma_shift.y;
 
+            int p = min(c, planes - 1);
+            int comp = c - p;
+
             for (int y = 0; y < h; y++)
-                decode_line(sc, sp, w, y, p, bits,
-                            slice_state_off[p], quant_table_idx[p], run_index);
+                decode_line(sc, sp, w, y, p, comp, bits,
+                            slice_state_off[c], quant_table_idx[c], run_index);
         }
 #else
         for (int y = 0; y < sc.slice_dim.y; y++) {
             for (int p = 0; p < color_planes; p++)
-                decode_line(sc, sp, w, y, p, bits,
+                decode_line(sc, sp, w, y, p, 0, bits,
                             slice_state_off[p], quant_table_idx[p], run_index);
 
             writeout_rgb(sc, sp, w, y, true);

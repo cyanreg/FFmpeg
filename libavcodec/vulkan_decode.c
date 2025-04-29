@@ -1059,6 +1059,12 @@ int ff_vk_frame_params(AVCodecContext *avctx, AVBufferRef *hw_frames_ctx)
             /* mpv has issues with bgr0 mapping, so just remap it */
             frames_ctx->sw_format = AV_PIX_FMT_RGB0;
             break;
+        case AV_PIX_FMT_YUV420P: frames_ctx->sw_format = AV_PIX_FMT_NV12; break;
+        case AV_PIX_FMT_YUV422P: frames_ctx->sw_format = AV_PIX_FMT_NV16; break;
+        case AV_PIX_FMT_YUV444P: frames_ctx->sw_format = AV_PIX_FMT_NV24; break;
+        case AV_PIX_FMT_YUV420P16: frames_ctx->sw_format = AV_PIX_FMT_P016; break;
+        case AV_PIX_FMT_YUV422P16: frames_ctx->sw_format = AV_PIX_FMT_P216; break;
+        case AV_PIX_FMT_YUV444P16: frames_ctx->sw_format = AV_PIX_FMT_P416; break;
         default:
             break;
         }
