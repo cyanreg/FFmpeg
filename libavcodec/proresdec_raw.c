@@ -20,6 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "config_components.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/mem.h"
@@ -30,10 +31,13 @@
 #include "bytestream.h"
 #include "codec_internal.h"
 #include "decode.h"
+#include "hwconfig.h"
 #include "get_bits.h"
 #include "idctdsp.h"
 #include "proresdata.h"
 #include "thread.h"
+#include "hwconfig.h"
+#include "hwaccel_internal.h"
 
 #include "proresdec_raw.h"
 
@@ -312,6 +316,9 @@ static enum AVPixelFormat get_pixel_format(AVCodecContext *avctx,
                                            enum AVPixelFormat pix_fmt)
 {
     enum AVPixelFormat pix_fmts[] = {
+#if CONFIG_PRORES_RAW_VULKAN_HWACCEL
+        AV_PIX_FMT_VULKAN,
+#endif
         pix_fmt,
         AV_PIX_FMT_NONE,
     };
@@ -514,6 +521,9 @@ const FFCodec ff_prores_raw_decoder = {
                         AV_CODEC_CAP_SLICE_THREADS,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .hw_configs     = (const AVCodecHWConfigInternal *const []) {
+#if CONFIG_PRORES_RAW_VULKAN_HWACCEL
+        HWACCEL_VULKAN(prores_raw),
+#endif
         NULL
     },
 };
