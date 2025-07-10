@@ -159,6 +159,7 @@ typedef struct LibplaceboContext {
     pl_vulkan vulkan;
     pl_gpu gpu;
     pl_tex tex[4];
+    struct pl_custom_lut *lut;
 
     /* input state */
     LibplaceboInput *inputs;
@@ -184,6 +185,7 @@ typedef struct LibplaceboContext {
     AVExpr *pos_x_pexpr, *pos_y_pexpr, *pos_w_pexpr, *pos_h_pexpr;
     float pad_crop_ratio;
     float corner_rounding;
+    char *lut_filename;
     int force_original_aspect_ratio;
     int force_divisible_by;
     int reset_sar;
@@ -371,6 +373,28 @@ static int find_scaler(AVFilterContext *avctx,
     return AVERROR(EINVAL);
 }
 
+static int update_lut(LibplaceboContext *s)
+{
+    int ret;
+    uint8_t *lutbuf;
+    size_t lutbuf_size;
+
+    pl_lut_free(&s->lut);
+
+    if ((ret = av_file_map(s->lut_filename, &lutbuf, &lutbuf_size, 0, s)) < 0) {
+        av_log(s, AV_LOG_ERROR,
+               "The LUT file '%s' could not be read: %s\n",
+               s->lut_filename, av_err2str(ret));
+        return ret;
+    }
+
+    s->lut = pl_lut_parse_cube(s->log, lutbuf, lutbuf_size);
+
+    av_file_unmap(lutbuf, lutbuf_size);
+
+    return 0;
+}
+
 static int update_settings(AVFilterContext *ctx)
 {
     int err = 0;
@@ -468,6 +492,7 @@ static int update_settings(AVFilterContext *ctx)
     RET(find_scaler(ctx, &opts->params.upscaler, s->upscaler, 0));
     RET(find_scaler(ctx, &opts->params.downscaler, s->downscaler, 0));
     RET(find_scaler(ctx, &opts->params.frame_mixer, s->frame_mixer, 1));
+    RET(update_lut(s));
 
 #if PL_API_VER >= 309
     while ((e = av_dict_get(s->extra_opts, "", e, AV_DICT_IGNORE_SUFFIX))) {
@@ -757,6 +782,7 @@ static void libplacebo_uninit(AVFilterContext *avctx)
         av_freep(&s->inputs);
     }
 
+    pl_lut_free(&s->lut);
 #if PL_API_VER >= 351
     pl_cache_destroy(&s->cache);
 #endif
@@ -1005,6 +1031,7 @@ static bool map_frame(pl_gpu gpu, pl_tex *tex,
         .tex        = tex,
         .map_dovi   = s->apply_dovi,
     ));
+    out->lut = s->lut;
 
     if (!s->apply_filmgrain)
         out->film_grain.type = PL_FILM_GRAIN_NONE;
@@ -1406,6 +1433,7 @@ static const AVOption libplacebo_options[] = {
     { "pad_crop_ratio", "ratio between padding and cropping when normalizing SAR (0=pad, 1=crop)", OFFSET(pad_crop_ratio), AV_OPT_TYPE_FLOAT, {.dbl=0.0}, 0.0, 1.0, DYNAMIC },
     { "fillcolor", "Background fill color", OFFSET(fillcolor), AV_OPT_TYPE_COLOR, {.str = "black@0"}, .flags = DYNAMIC },
     { "corner_rounding", "Corner rounding radius", OFFSET(corner_rounding), AV_OPT_TYPE_FLOAT, {.dbl = 0.0}, 0.0, 1.0, .flags = DYNAMIC },
+    { "lut", "Apply a look-up table", OFFSET(lut_filename), AV_OPT_TYPE_STRING, { .str = NULL }, .flags = DYNAMIC },
     { "extra_opts", "Pass extra libplacebo-specific options using a :-separated list of key=value pairs", OFFSET(extra_opts), AV_OPT_TYPE_DICT, .flags = DYNAMIC },
 #if PL_API_VER >= 351
     { "shader_cache",  "Set shader cache path", OFFSET(shader_cache), AV_OPT_TYPE_STRING, {.str = NULL}, .flags = STATIC },
